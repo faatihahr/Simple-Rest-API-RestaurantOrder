@@ -1,57 +1,86 @@
 import type { Request, Response } from 'express';
-import { products } from '../models/Product.js';
-import type { Product } from '../models/Product.js';
+import prisma from '../lib/prisma.js';
 
-export const getProducts = (req: Request, res: Response) => {
-  res.json(products);
-};
-
-export const getProductById = (req: Request, res: Response) => {
-  const id = parseInt(req.params.id!);
-  const product = products.find(p => p.id === id);
-  if (product) {
-    res.json(product);
-  } else {
-    res.status(404).json({ message: 'Product not found' });
+export const getProducts = async (req: Request, res: Response) => {
+  try {
+    const products = await prisma.products.findMany();
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching products', error });
   }
 };
 
-export const createProduct = (req: Request, res: Response) => {
-  const { name, price, description } = req.body;
-  if (!name || !price || !description) {
-    return res.status(400).json({ message: 'Name, price, and description are required' });
-  }
-  const newProduct: Product = {
-    id: products.length + 1,
-    name,
-    price,
-    description,
-  };
-  products.push(newProduct);
-  res.status(201).json(newProduct);
-};
-
-export const updateProduct = (req: Request, res: Response) => {
+export const getProductById = async (req: Request, res: Response) => {
   const id = parseInt(req.params.id!);
-  const productIndex = products.findIndex(p => p.id === id);
-  if (productIndex !== -1) {
-    const { name, price, description } = req.body;
-    if (name !== undefined) products[productIndex]!.name = name;
-    if (price !== undefined) products[productIndex]!.price = price;
-    if (description !== undefined) products[productIndex]!.description = description;
-    res.json(products[productIndex]);
-  } else {
-    res.status(404).json({ message: 'Product not found' });
+  try {
+    const product = await prisma.products.findUnique({
+      where: { id }
+    });
+    if (product) {
+      res.json(product);
+    } else {
+      res.status(404).json({ message: 'Product not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching product', error });
   }
 };
 
-export const deleteProduct = (req: Request, res: Response) => {
+export const createProduct = async (req: Request, res: Response) => {
+  const { name, price, description, categoryId } = req.body;
+  if (!name || !price || !description || !categoryId) {
+    return res.status(400).json({ message: 'Name, price, description, and categoryId are required' });
+  }
+  try {
+    const newProduct = await prisma.products.create({
+      data: {
+        name,
+        price,
+        description,
+        categoryId
+      }
+    });
+    res.status(201).json(newProduct);
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating product', error });
+  }
+};
+
+export const updateProduct = async (req: Request, res: Response) => {
   const id = parseInt(req.params.id!);
-  const productIndex = products.findIndex(p => p.id === id);
-  if (productIndex !== -1) {
-    const deletedProduct = products.splice(productIndex, 1);
+  const { name, price, description, categoryId } = req.body;
+  try {
+    const updatedProduct = await prisma.products.update({
+      where: { id },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(price !== undefined && { price }),
+        ...(description !== undefined && { description }),
+        ...(categoryId !== undefined && { categoryId })
+      }
+    });
+    res.json(updatedProduct);
+  } catch (error) {
+    if ((error as any).code === 'P2025') {
+      res.status(404).json({ message: 'Product not found' });
+    } else {
+      res.status(500).json({ message: 'Error updating product', error });
+    }
+  }
+};
+
+export const deleteProduct = async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id!);
+  try {
+    const deletedProduct = await prisma.products.delete({
+      where: { id }
+    });
     res.json(deletedProduct);
-  } else {
-    res.status(404).json({ message: 'Product not found' });
+  } catch (error) {
+    if ((error as any).code === 'P2025') {
+      res.status(404).json({ message: 'Product not found' });
+    } else {
+      res.status(500).json({ message: 'Error deleting product', error });
+    }
   }
 };

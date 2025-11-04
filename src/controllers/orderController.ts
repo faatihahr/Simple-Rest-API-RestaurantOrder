@@ -1,88 +1,192 @@
 import type { Request, Response } from 'express';
-import { orders } from '../models/Order.js';
-import { products } from '../models/Product.js';
-import type { Order, OrderItem } from '../models/Order.js';
+import { prisma } from '../connection/client.js';
 
-export const getOrders = (req: Request, res: Response) => {
-  res.json(orders);
-};
-
-export const getOrderById = (req: Request, res: Response) => {
-  const id = parseInt(req.params.id!);
-  const order = orders.find(o => o.id === id);
-  if (order) {
-    res.json(order);
-  } else {
-    res.status(404).json({ message: 'Order not found' });
+export const getOrders = async (req: Request, res: Response) => {
+  try {
+    const orders = await prisma.orders.findMany({
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                price: true
+              }
+            }
+          }
+        }
+      }
+    });
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching orders', error });
   }
 };
 
-export const createOrder = (req: Request, res: Response) => {
-  const { items }: { items: OrderItem[] } = req.body;
+export const getOrderById = async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id!);
+  try {
+    const order = await prisma.orders.findUnique({
+      where: { id },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                price: true
+              }
+            }
+          }
+        }
+      }
+    });
+    if (order) {
+      res.json(order);
+    } else {
+      res.status(404).json({ message: 'Order not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching order', error });
+  }
+};
+
+export const createOrder = async (req: Request, res: Response) => {
+  const { items }: { items: { productId: number; quantity: number }[] } = req.body;
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ message: 'Items are required' });
   }
 
-  let total = 0;
-  const itemsWithNames: OrderItem[] = [];
-  for (const item of items) {
-    const product = products.find(p => p.id === item.productId);
-    if (!product) {
-      return res.status(400).json({ message: `Product with id ${item.productId} not found` });
+  try {
+    let totalPrice = 0;
+    const orderItems = [];
+    for (const item of items) {
+      const product = await prisma.products.findUnique({ where: { id: item.productId } });
+      if (!product) {
+        return res.status(400).json({ message: `Product with id ${item.productId} not found` });
+      }
+      const price = product.price * item.quantity;
+      totalPrice += price;
+      orderItems.push({
+        productId: item.productId,
+        quantity: item.quantity,
+        price
+      });
     }
-    total += product.price * item.quantity;
-    itemsWithNames.push({
-      productId: item.productId,
-      quantity: item.quantity,
-      name: product.name,
+    const newOrder = await prisma.orders.create({
+      data: {
+        totalPrice,
+        items: {
+          create: orderItems
+        }
+      },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                price: true
+              }
+            }
+          }
+        }
+      }
     });
+    res.status(201).json(newOrder);
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating order', error });
   }
-
-  const newOrder: Order = {
-    id: orders.length + 1,
-    items: itemsWithNames,
-    total,
-  };
-  orders.push(newOrder);
-  res.status(201).json(newOrder);
 };
 
-export const updateOrder = (req: Request, res: Response) => {
+export const updateOrder = async (req: Request, res: Response) => {
   const id = parseInt(req.params.id!);
-  const orderIndex = orders.findIndex(o => o.id === id);
-  if (orderIndex !== -1) {
-    const { items }: { items?: OrderItem[] } = req.body;
+  const { items }: { items?: { productId: number; quantity: number }[] } = req.body;
+  try {
     if (items && Array.isArray(items) && items.length > 0) {
-      let total = 0;
-      const itemsWithNames: OrderItem[] = [];
+      // Delete existing items
+      await prisma.orderItems.deleteMany({
+        where: { orderId: id }
+      });
+      // Recalculate total price and create new items
+      let totalPrice = 0;
+      const orderItems = [];
       for (const item of items) {
-        const product = products.find(p => p.id === item.productId);
+        const product = await prisma.products.findUnique({ where: { id: item.productId } });
         if (!product) {
           return res.status(400).json({ message: `Product with id ${item.productId} not found` });
         }
-        total += product.price * item.quantity;
-        itemsWithNames.push({
+        const price = product.price * item.quantity;
+        totalPrice += price;
+        orderItems.push({
           productId: item.productId,
           quantity: item.quantity,
-          name: product.name,
+          price
         });
       }
-      orders[orderIndex]!.total = total;
-      orders[orderIndex]!.items = itemsWithNames;
+      const updatedOrder = await prisma.orders.update({
+        where: { id },
+        data: {
+          totalPrice,
+          items: {
+            create: orderItems
+          }
+        },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  price: true
+                }
+              }
+            }
+          }
+        }
+      });
+      res.json(updatedOrder);
+    } else {
+      res.status(400).json({ message: 'Items are required' });
     }
-    res.json(orders[orderIndex]);
-  } else {
-    res.status(404).json({ message: 'Order not found' });
+  } catch (error) {
+    if ((error as any).code === 'P2025') {
+      res.status(404).json({ message: 'Order not found' });
+    } else {
+      res.status(500).json({ message: 'Error updating order', error });
+    }
   }
 };
 
-export const deleteOrder = (req: Request, res: Response) => {
+export const deleteOrder = async (req: Request, res: Response) => {
   const id = parseInt(req.params.id!);
-  const orderIndex = orders.findIndex(o => o.id === id);
-  if (orderIndex !== -1) {
-    const deletedOrder = orders.splice(orderIndex, 1);
+  try {
+    const deletedOrder = await prisma.orders.delete({
+      where: { id },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  price: true
+                }
+              }
+            }
+          }
+        }
+    });
     res.json(deletedOrder);
-  } else {
-    res.status(404).json({ message: 'Order not found' });
+  } catch (error) {
+    if ((error as any).code === 'P2025') {
+      res.status(404).json({ message: 'Order not found' });
+    } else {
+      res.status(500).json({ message: 'Error deleting order', error });
+    }
   }
 };
