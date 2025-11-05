@@ -1,7 +1,5 @@
-import pkg from '@prisma/client';
 import type { PrismaClient as PrismaClientType } from '@prisma/client';
-
-const { PrismaClient } = pkg as any;
+import { PrismaClient } from '@prisma/client';
 
 const prisma: PrismaClientType = new PrismaClient();
 
@@ -101,13 +99,82 @@ async function main() {
     },
   });
 
+  // Seed tables (meja)
+  const table1 = await prisma.meja.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      name: 'Table 1',
+      isAvailable: true,
+    },
+  });
+
+  const table2 = await prisma.meja.upsert({
+    where: { id: 2 },
+    update: {},
+    create: {
+      name: 'Table 2',
+      isAvailable: true,
+    },
+  });
+
+  // Seed users
+  const user1 = await prisma.user.upsert({
+    where: { email: 'john.doe@example.com' },
+    update: {},
+    create: {
+      name: 'John Doe',
+      email: 'john.doe@example.com',
+      password: 'hashedpassword123', // hash dilakukan di real app
+    },
+  });
+
+  const user2 = await prisma.user.upsert({
+    where: { email: 'jane.smith@example.com' },
+    update: {},
+    create: {
+      name: 'Jane Smith',
+      email: 'jane.smith@example.com',
+      password: 'hashedpassword456', 
+    },
+  });
+
+  // Seed user favorites
+  await prisma.user_favorites.upsert({
+    where: { userId_productId: { userId: user1.id, productId: pizza.id } },
+    update: {},
+    create: {
+      userId: user1.id,
+      productId: pizza.id,
+    },
+  });
+
+  await prisma.user_favorites.upsert({
+    where: { userId_productId: { userId: user1.id, productId: coffee.id } },
+    update: {},
+    create: {
+      userId: user1.id,
+      productId: coffee.id,
+    },
+  });
+
+  await prisma.user_favorites.upsert({
+    where: { userId_productId: { userId: user2.id, productId: burger.id } },
+    update: {},
+    create: {
+      userId: user2.id,
+      productId: burger.id,
+    },
+  });
+
   // Delete existing orders and items
   await prisma.orderItems.deleteMany({});
   await prisma.orders.deleteMany({});
 
-  // Seed orders
-  await prisma.orders.create({
+  // Seed orders 
+  const order1 = await prisma.orders.create({
     data: {
+      tableId: table1.id,
       totalPrice: 25.98 + 9.99, // pizza x2 + burger x1
       items: {
         create: [
@@ -126,8 +193,9 @@ async function main() {
     },
   });
 
-  await prisma.orders.create({
+  const order2 = await prisma.orders.create({
     data: {
+      tableId: table2.id,
       totalPrice: 3.50 + 4.00, // coffee x1 + juice x1
       items: {
         create: [
@@ -143,6 +211,69 @@ async function main() {
           }
         ]
       }
+    },
+  });
+
+  const order3 = await prisma.orders.create({
+    data: {
+      userId: user2.id,
+      tableId: table2.id,
+      totalPrice: 9.99 + 4.00, // burger x1 + juice x1
+      items: {
+        create: [
+          {
+            productId: burger.id,
+            quantity: 1,
+            price: burger.price
+          },
+          {
+            productId: juice.id,
+            quantity: 1,
+            price: juice.price
+          }
+        ]
+      }
+    },
+  });
+
+  // Seed user reviews
+  await prisma.user_reviews.create({
+    data: {
+      userId: user1.id,
+      productId: pizza.id,
+      orderId: order1.id,
+      rating: 5,
+      comment: 'Amazing pizza! Will order again.',
+    },
+  });
+
+  await prisma.user_reviews.create({
+    data: {
+      userId: user1.id,
+      productId: burger.id,
+      orderId: order1.id,
+      rating: 4,
+      comment: 'Good burger, but could be juicier.',
+    },
+  });
+
+  await prisma.user_reviews.create({
+    data: {
+      userId: user2.id,
+      productId: coffee.id,
+      orderId: order2.id,
+      rating: 5,
+      comment: 'Perfect espresso, strong and flavorful.',
+    },
+  });
+
+  await prisma.user_reviews.create({
+    data: {
+      userId: user2.id,
+      productId: juice.id,
+      orderId: order2.id,
+      rating: 4,
+      comment: 'Fresh juice, but a bit too sweet.',
     },
   });
 

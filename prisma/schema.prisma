@@ -24,6 +24,8 @@ model products {
   price       Float
   images   images[]
   orderItems orderItems[]
+  favorites   user_favorites[]
+  reviews     user_reviews[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   isAvailable Boolean  @default(true)
@@ -49,6 +51,11 @@ model orders {
   id         Int      @id @default(autoincrement())
   items      orderItems[]
   totalPrice Float
+  userId     Int?
+  user       user?    @relation(fields: [userId], references: [id])
+  tableId    Int?
+  table      meja?    @relation(fields: [tableId], references: [id])
+  reviews    user_reviews[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -66,4 +73,56 @@ model orderItems {
 
   @@index([orderId], name: "idx_order_id")
   @@index([productId], name: "idx_product_id_order_items")
+}
+
+model meja {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  isAvailable Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  orders      orders[]
+}
+
+model user {
+  id         Int      @id @default(autoincrement())
+  name       String
+  email      String   @unique
+  password   String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  orders     orders[]
+  favorites  user_favorites[]
+  reviews    user_reviews[]
+}
+
+model user_favorites {
+  id        Int     @id @default(autoincrement())
+  userId    Int
+  user      user    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId Int
+  product   products @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+  @@index([userId], name: "idx_user_favorites_user_id")
+  @@index([productId], name: "idx_user_favorites_product_id")
+}
+
+model user_reviews {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      user     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId Int?
+  product   products? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderId   Int?
+  order     orders?  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  rating    Int      // 1-5
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId], name: "idx_user_reviews_user_id")
+  @@index([productId], name: "idx_user_reviews_product_id")
+  @@index([orderId], name: "idx_user_reviews_order_id")
 }
