@@ -27,7 +27,7 @@ export const getProducts = async (req, res) => {
                 reviews: true
             }
         });
-        res.json(products);
+        res.json({ message: 'Products fetched successfully', data: products });
     }
     catch (error) {
         res.status(500).json({ message: 'Error fetching products', error });
@@ -40,7 +40,7 @@ export const getProductById = async (req, res) => {
             where: { id }
         });
         if (product) {
-            res.json(product);
+            res.json({ message: 'Product fetched successfully', data: product });
         }
         else {
             res.status(404).json({ message: 'Product not found' });
@@ -64,7 +64,7 @@ export const createProduct = async (req, res) => {
                 categoryId
             }
         });
-        res.status(201).json(newProduct);
+        res.status(201).json({ message: 'Product created successfully', data: newProduct });
     }
     catch (error) {
         res.status(500).json({ message: 'Error creating product', error });
@@ -83,7 +83,7 @@ export const updateProduct = async (req, res) => {
                 ...(categoryId !== undefined && { categoryId })
             }
         });
-        res.json(updatedProduct);
+        res.json({ message: 'Product updated successfully', data: updatedProduct });
     }
     catch (error) {
         if (error.code === 'P2025') {
@@ -100,7 +100,7 @@ export const deleteProduct = async (req, res) => {
         const deletedProduct = await prisma.products.delete({
             where: { id }
         });
-        res.json(deletedProduct);
+        res.json({ message: 'Product deleted successfully', data: deletedProduct });
     }
     catch (error) {
         if (error.code === 'P2025') {
@@ -109,6 +109,47 @@ export const deleteProduct = async (req, res) => {
         else {
             res.status(500).json({ message: 'Error deleting product', error });
         }
+    }
+};
+export const getProductsByCategory = async (req, res) => {
+    try {
+        const { categoryName } = req.params;
+        if (!categoryName) {
+            return res.status(400).json({ message: 'Category name is required' });
+        }
+        const { limit, offset } = req.query;
+        const categoryMap = {
+            food: 'Food',
+            beverages: 'Beverages'
+        };
+        const dbCategoryName = categoryMap[categoryName.toLowerCase()];
+        if (!dbCategoryName) {
+            return res.status(400).json({ message: 'Invalid category name. Use "food" or "beverages".' });
+        }
+        const take = limit ? parseInt(limit) : undefined;
+        const skip = offset ? parseInt(offset) : undefined;
+        const products = await prisma.products.findMany({
+            where: {
+                category: {
+                    name: dbCategoryName
+                }
+            },
+            take,
+            skip,
+            include: {
+                category: true,
+                images: true,
+                favorites: true,
+                reviews: true
+            }
+        });
+        const grouped = {
+            [dbCategoryName]: products
+        };
+        res.json({ message: 'Products by category fetched successfully', data: grouped });
+    }
+    catch (error) {
+        res.status(500).json({ message: 'Error fetching products by category', error });
     }
 };
 //# sourceMappingURL=productController.js.map

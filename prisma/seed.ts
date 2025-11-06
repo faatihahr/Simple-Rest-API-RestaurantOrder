@@ -126,6 +126,7 @@ async function main() {
       name: 'John Doe',
       email: 'john.doe@example.com',
       password: 'hashedpassword123', // hash dilakukan di real app
+      point: 100,
     },
   });
 
@@ -135,7 +136,8 @@ async function main() {
     create: {
       name: 'Jane Smith',
       email: 'jane.smith@example.com',
-      password: 'hashedpassword456', 
+      password: 'hashedpassword456',
+      point: 50,
     },
   });
 

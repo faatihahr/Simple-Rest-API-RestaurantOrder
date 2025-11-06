@@ -3,9 +3,9 @@ import { getOrders, getOrderById, createOrder, updateOrder, deleteOrder, getOrde
 const router = Router();
 router.get('/', getOrders);
 router.get('/summary', getOrderSummary);
-router.get('/:id', getOrderById);
+router.get('/:id(\\d+)', getOrderById);
 router.post('/createorders', createOrder);
-router.put('/update/:id', updateOrder);
-router.delete('/del/:id', deleteOrder);
+router.put('/update/:id(\\d+)', updateOrder);
+router.delete('/del/:id(\\d+)', deleteOrder);
 export default router;
 //# sourceMappingURL=orderRoutes.js.map

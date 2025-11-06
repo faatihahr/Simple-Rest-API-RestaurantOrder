@@ -31,7 +31,7 @@ export const getOrders = async (req, res) => {
                 table: true
             }
         });
-        res.json(orders);
+        res.json({ message: 'Orders list fetched successfully', data: orders });
     }
     catch (error) {
         res.status(500).json({ message: 'Error fetching orders', error });
@@ -57,7 +57,7 @@ export const getOrderById = async (req, res) => {
             }
         });
         if (order) {
-            res.json(order);
+            res.json({ message: 'Order fetched successfully', data: order });
         }
         else {
             res.status(404).json({ message: 'Order not found' });
@@ -68,7 +68,7 @@ export const getOrderById = async (req, res) => {
     }
 };
 export const createOrder = async (req, res) => {
-    const { items } = req.body;
+    const { items, tableId, userId } = req.body;
     if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ message: 'Items are required' });
     }
@@ -91,6 +91,8 @@ export const createOrder = async (req, res) => {
         const newOrder = await prisma.orders.create({
             data: {
                 totalPrice,
+                tableId,
+                userId,
                 items: {
                     create: orderItems
                 }
@@ -106,10 +108,12 @@ export const createOrder = async (req, res) => {
                             }
                         }
                     }
-                }
+                },
+                table: true,
+                user: true
             }
         });
-        res.status(201).json(newOrder);
+        res.status(201).json({ message: 'Order created successfully', data: newOrder });
     }
     catch (error) {
         res.status(500).json({ message: 'Error creating order', error });
@@ -120,11 +124,11 @@ export const updateOrder = async (req, res) => {
     const { items } = req.body;
     try {
         if (items && Array.isArray(items) && items.length > 0) {
-            // Delete existing items
+            // Hapus item
             await prisma.orderItems.deleteMany({
                 where: { orderId: id }
             });
-            // Recalculate total price and create new items
+            // menghitung ulang totalPrice dan menambahkan item baru
             let totalPrice = 0;
             const orderItems = [];
             for (const item of items) {
@@ -162,7 +166,7 @@ export const updateOrder = async (req, res) => {
                     }
                 }
             });
-            res.json(updatedOrder);
+            res.json({ message: 'Order updated successfully', data: updatedOrder });
         }
         else {
             res.status(400).json({ message: 'Items are required' });
@@ -196,7 +200,7 @@ export const deleteOrder = async (req, res) => {
                 }
             }
         });
-        res.json(deletedOrder);
+        res.json({ message: 'Order deleted successfully', data: deletedOrder });
     }
     catch (error) {
         if (error.code === 'P2025') {
@@ -212,7 +216,7 @@ export const getOrderSummary = async (req, res) => {
         const { limit, offset } = req.query;
         const take = limit ? parseInt(limit) : 10;
         const skip = offset ? parseInt(offset) : 0;
-        // Get all orders and group them by date in JavaScript
+        // menampilkan seluruh item berdasarkan tanggal (createdAt)
         const orders = await prisma.orders.findMany({
             select: {
                 createdAt: true,
@@ -221,10 +225,10 @@ export const getOrderSummary = async (req, res) => {
             orderBy: {
                 createdAt: 'desc'
             },
-            take: 1000, // Limit to prevent memory issues, adjust as needed
+            take: 1000, //limitasi besar untuk mengambil data
             skip: 0
         });
-        // Group orders by date
+        // Group orders berdasarkan tanggal
         const summaryMap = new Map();
         orders.forEach((order) => {
             const date = order.createdAt.toISOString().split('T')[0];
@@ -240,7 +244,6 @@ export const getOrderSummary = async (req, res) => {
                 });
             }
         });
-        // Convert to array and sort by date descending
         const formattedSummary = Array.from(summaryMap.entries())
             .map(([date, data]) => ({
             date,
@@ -249,7 +252,7 @@ export const getOrderSummary = async (req, res) => {
         }))
             .sort((a, b) => b.date.localeCompare(a.date))
             .slice(skip, skip + take);
-        res.json(formattedSummary);
+        res.json({ message: 'Order summary fetched successfully', data: formattedSummary });
     }
     catch (error) {
         console.error('Error in getOrderSummary:', error);
