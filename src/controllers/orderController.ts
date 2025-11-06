@@ -1,5 +1,12 @@
 import type { Request, Response } from 'express';
 import prisma from '../lib/prisma.js';
+import { PrismaClient } from '@prisma/client';
+
+type OrderItemData = {
+  productId: number;
+  quantity: number;
+  price: number;
+};
 
 export const getOrders = async (req: Request, res: Response) => {
   try {
@@ -79,12 +86,27 @@ export const createOrder = async (req: Request, res: Response) => {
 
   try {
     let totalPrice = 0;
-    const orderItems = [];
+    const orderItems: OrderItemData[] = [];
+    const stockUpdates: { stockId: number; reduceBy: number }[] = [];
+
     for (const item of items) {
-      const product = await prisma.products.findUnique({ where: { id: item.productId } });
+      const product = await prisma.products.findUnique({
+        where: { id: item.productId },
+        include: { stocks: { include: { stock: true } } }
+      });
       if (!product) {
         return res.status(400).json({ message: `Product with id ${item.productId} not found` });
       }
+
+      // Mengecek dan mengurangi stok yang tersedia
+      for (const prodStock of product.stocks) {
+        const required = prodStock.quantityRequired * item.quantity;
+        if (prodStock.stock.quantity < required) {
+          return res.status(400).json({ message: `Insufficient stock for ${prodStock.stock.name}` });
+        }
+        stockUpdates.push({ stockId: prodStock.stockId, reduceBy: required });
+      }
+
       const price = product.price * item.quantity;
       totalPrice += price;
       orderItems.push({
@@ -93,31 +115,48 @@ export const createOrder = async (req: Request, res: Response) => {
         price
       });
     }
-    const newOrder = await prisma.orders.create({
-      data: {
+
+    // Transaksi untuk membuat order dan memperbarui stok
+    const newOrder = await prisma.$transaction(async (tx: PrismaClient) => {
+      const orderData: any = {
         totalPrice,
-        tableId,
-        userId,
         items: {
           create: orderItems
         }
-      },
-      include: {
-        items: {
-          include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                price: true
+      };
+      if (tableId !== undefined) orderData.tableId = tableId;
+      if (userId !== undefined) orderData.userId = userId;
+
+      const order = await tx.orders.create({
+        data: orderData,
+        include: {
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  price: true
+                }
               }
             }
-          }
-        },
-        table: true,
-        user: true
+          },
+          table: true,
+          user: true
+        }
+      });
+
+      // Update jumlah stok
+      for (const update of stockUpdates) {
+        await tx.stock.update({
+          where: { id: update.stockId },
+          data: { quantity: { decrement: update.reduceBy } }
+        });
       }
+
+      return order;
     });
+
     res.status(201).json({ message: 'Order created successfully', data: newOrder });
   } catch (error) {
     res.status(500).json({ message: 'Error creating order', error });

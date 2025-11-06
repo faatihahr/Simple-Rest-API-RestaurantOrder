@@ -1,30 +1,29 @@
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import prisma from '../lib/prisma.js';
 
-export const transferPoints = async (req: Request, res: Response) => {
-  const { senderId, receiverId, points }: { senderId: number; receiverId: number; points: number } = req.body;
-
-  if (!senderId || !receiverId || !points) {
-    return res.status(400).json({ message: 'senderId, receiverId, and points are required' });
-  }
-
-  if (points <= 0) {
-    return res.status(400).json({ message: 'Points must be greater than 0' });
-  }
-
-  if (senderId === receiverId) {
-    return res.status(400).json({ message: 'Sender and receiver cannot be the same' });
-  }
-
+export const transferPoints = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Fetch sender and receiver points before transaction
+    const { senderId, receiverId, points }: { senderId: number; receiverId: number; points: number } = req.body;
+
+    if (!senderId || !receiverId || !points) {
+      throw new Error('senderId, receiverId, and points are required');
+    }
+
+    if (points <= 0) {
+      throw new Error('Points must be greater than 0');
+    }
+
+    if (senderId === receiverId) {
+      throw new Error('Sender and receiver cannot be the same');
+    }
+    // Memeriksa poin pengirim sebelum transaksi
     const senderBefore = await prisma.user.findUnique({
       where: { id: senderId },
       select: { point: true }
     });
 
     if (!senderBefore) {
-      return res.status(400).json({ message: 'Sender not found' });
+      throw new Error('Sender not found');
     }
 
     const receiverBefore = await prisma.user.findUnique({
@@ -33,11 +32,11 @@ export const transferPoints = async (req: Request, res: Response) => {
     });
 
     if (!receiverBefore) {
-      return res.status(400).json({ message: 'Receiver not found' });
+      throw new Error('Receiver not found');
     }
 
     if (senderBefore.point < points) {
-      return res.status(400).json({ message: 'Not enough points!' });
+      throw new Error('Not enough points!');
     }
 
     // Transaction process
@@ -55,7 +54,7 @@ export const transferPoints = async (req: Request, res: Response) => {
       });
     });
 
-    // Fetch points after transaction
+    // Memeriksa poin setelah transaksi
     const senderAfter = await prisma.user.findUnique({
       where: { id: senderId },
       select: { point: true }
@@ -82,14 +81,13 @@ export const transferPoints = async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(500).json({ message: 'Error transferring points', error: error.message });
+    next(error);
   }
 };
 
-export const getUsers = async (req: Request, res: Response) => {
-  const { email, limit } = req.query;
-
+export const getUsers = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const { email, limit } = req.query;
     const where: any = {};
     if (email) {
       where.email = {
@@ -115,25 +113,24 @@ export const getUsers = async (req: Request, res: Response) => {
 
     res.json({ users });
   } catch (error: any) {
-    res.status(500).json({ message: 'Error fetching users', error: error.message });
+    next(error);
   }
 };
 
-export const createUser = async (req: Request, res: Response) => {
-  const body = req.body as { name: string; email: string; password: string };
-  const { name, email, password } = body;
-
-  if (!name || !email || !password) {
-    return res.status(400).json({ message: 'name, email, and password are required' });
-  }
-
+export const createUser = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const body = req.body as { name: string; email: string; password: string };
+    const { name, email, password } = body;
+
+    if (!name || !email || !password) {
+      throw new Error('name, email, and password are required');
+    }
     const existingUser = await prisma.user.findUnique({
       where: { email: email! }
     });
 
     if (existingUser) {
-      return res.status(400).json({ message: 'Email already exists' });
+      throw new Error('Email already exists');
     }
 
     const user = await prisma.user.create({
@@ -154,30 +151,29 @@ export const createUser = async (req: Request, res: Response) => {
 
     res.status(201).json({ user });
   } catch (error: any) {
-    res.status(500).json({ message: 'Error creating user', error: error.message });
+    next(error);
   }
 };
 
-export const updateUser = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { name, email, password, point }: { name?: string; email?: string; password?: string; point?: number } = req.body;
-
-  if (!id) {
-    return res.status(400).json({ message: 'User ID is required' });
-  }
-
-  const userId = parseInt(id);
-  if (isNaN(userId)) {
-    return res.status(400).json({ message: 'Invalid user ID' });
-  }
-
+export const updateUser = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const { id } = req.params;
+    const { name, email, password, point }: { name?: string; email?: string; password?: string; point?: number } = req.body;
+
+    if (!id) {
+      throw new Error('User ID is required');
+    }
+
+    const userId = parseInt(id);
+    if (isNaN(userId)) {
+      throw new Error('Invalid user ID');
+    }
     const existingUser = await prisma.user.findUnique({
       where: { id: userId }
     });
 
     if (!existingUser) {
-      return res.status(404).json({ message: 'User not found' });
+      throw new Error('User not found');
     }
 
     if (email) {
@@ -185,7 +181,7 @@ export const updateUser = async (req: Request, res: Response) => {
         where: { email: email as string }
       });
       if (emailExists && emailExists.id !== userId) {
-        return res.status(400).json({ message: 'Email already exists' });
+        throw new Error('Email already exists');
       }
     }
 
@@ -209,29 +205,28 @@ export const updateUser = async (req: Request, res: Response) => {
 
     res.json({ user });
   } catch (error: any) {
-    res.status(500).json({ message: 'Error updating user', error: error.message });
+    next(error);
   }
 };
 
-export const deleteUser = async (req: Request, res: Response) => {
-  const { id } = req.params;
-
-  if (!id) {
-    return res.status(400).json({ message: 'User ID is required' });
-  }
-
-  const userId = parseInt(id);
-  if (isNaN(userId)) {
-    return res.status(400).json({ message: 'Invalid user ID' });
-  }
-
+export const deleteUser = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const { id } = req.params;
+
+    if (!id) {
+      throw new Error('User ID is required');
+    }
+
+    const userId = parseInt(id);
+    if (isNaN(userId)) {
+      throw new Error('Invalid user ID');
+    }
     const existingUser = await prisma.user.findUnique({
       where: { id: userId }
     });
 
     if (!existingUser) {
-      return res.status(404).json({ message: 'User not found' });
+      throw new Error('User not found');
     }
 
     await prisma.user.delete({
@@ -240,6 +235,6 @@ export const deleteUser = async (req: Request, res: Response) => {
 
     res.json({ message: 'User deleted successfully' });
   } catch (error: any) {
-    res.status(500).json({ message: 'Error deleting user', error: error.message });
+    next(error);
   }
 };

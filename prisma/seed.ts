@@ -279,6 +279,63 @@ async function main() {
     },
   });
 
+  // Seed suppliers
+  const supplierA = await prisma.supplier.upsert({
+    where: { name: 'Acme Supplies' },
+    update: {},
+    create: { name: 'Acme Supplies' },
+  });
+
+  const supplierB = await prisma.supplier.upsert({
+    where: { name: 'Fresh Farm' },
+    update: {},
+    create: { name: 'Fresh Farm' },
+  });
+
+  // Seed stocks (create if not exists)
+  let flour = await prisma.stock.findFirst({ where: { name: 'Flour' } });
+  if (!flour) {
+    flour = await prisma.stock.create({
+      data: {
+        name: 'Flour',
+        quantity: 100,
+        unit: 'kg',
+        supplierId: supplierA.id,
+      },
+    });
+  }
+
+  let tomato = await prisma.stock.findFirst({ where: { name: 'Tomato' } });
+  if (!tomato) {
+    tomato = await prisma.stock.create({
+      data: {
+        name: 'Tomato',
+        quantity: 200,
+        unit: 'kg',
+        supplierId: supplierB.id,
+      },
+    });
+  }
+
+  // seed product stocks (associating stocks with products)
+  await prisma.productStock.upsert({
+    where: { productId_stockId: { productId: pizza.id, stockId: flour.id } },
+    update: {},
+    create: { productId: pizza.id, stockId: flour.id, quantityRequired: 0.5 },
+  });
+
+  await prisma.productStock.upsert({
+    where: { productId_stockId: { productId: pizza.id, stockId: tomato.id } },
+    update: {},
+    create: { productId: pizza.id, stockId: tomato.id, quantityRequired: 0.2 },
+  });
+
+  await prisma.productStock.upsert({
+    where: { productId_stockId: { productId: burger.id, stockId: flour.id } },
+    update: {},
+    create: { productId: burger.id, stockId: flour.id, quantityRequired: 0.3 },
+  });
+
   console.log('Database seeded successfully');
 }
 

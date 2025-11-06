@@ -26,6 +26,7 @@ model products {
   orderItems orderItems[]
   favorites   user_favorites[]
   reviews     user_reviews[]
+  stocks      ProductStock[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   isAvailable Boolean  @default(true)
@@ -126,4 +127,38 @@ model user_reviews {
   @@index([userId], name: "idx_user_reviews_user_id")
   @@index([productId], name: "idx_user_reviews_product_id")
   @@index([orderId], name: "idx_user_reviews_order_id")
+}
+
+model Supplier {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  stocks    Stock[]
+}
+
+model Stock {
+  id         Int      @id @default(autoincrement())
+  name       String
+  quantity   Float    @default(0)
+  unit       String
+  supplierId Int
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+  products   ProductStock[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([supplierId], name: "idx_supplier_id")
+}
+
+model ProductStock {
+  productId        Int
+  product          products @relation(fields: [productId], references: [id], onDelete: Cascade)
+  stockId          Int
+  stock            Stock @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  quantityRequired Float
+
+  @@id([productId, stockId])
+  @@index([productId], name: "idx_product_stock_product_id")
+  @@index([stockId], name: "idx_product_stock_stock_id")
 }
