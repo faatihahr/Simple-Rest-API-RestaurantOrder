@@ -3,33 +3,19 @@ import productRoutes from './routes/productRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import supplierRoutes from './routes/supplierRoutes.js';
+import { errorHandler } from './middleware/handlingerror-middleware.js';
+import { authenticate } from './middleware/auth-middleware.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(express.json());
+// Public routes (no auth required)
+app.use('/api/users', userRoutes); // Assuming login/signup are public
+// Protected routes
+app.use('/api/products', authenticate, productRoutes);
+app.use('/api/orders', authenticate, orderRoutes);
+app.use('/api/suppliers', authenticate, supplierRoutes);
 // Error handling middleware
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    if (err.message.includes('Stock with id') && err.message.includes('not found')) {
-        return res.status(404).json({ message: 'Stock not found', error: err.message });
-    }
-    if (err.message.includes('does not belong to supplier')) {
-        return res.status(400).json({ message: 'Supplier mismatch', error: err.message });
-    }
-    if (err.message.includes('Insufficient stock')) {
-        return res.status(400).json({ message: 'Insufficient stock', error: err.message });
-    }
-    if (err.message.includes('Invalid quantity change')) {
-        return res.status(400).json({ message: 'Invalid quantity change', error: err.message });
-    }
-    res.status(500).json({
-        message: 'Something went wrong!',
-        error: err.message
-    });
-});
-app.use('/api/products', productRoutes);
-app.use('/api/orders', orderRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/suppliers', supplierRoutes);
+app.use(errorHandler);
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });

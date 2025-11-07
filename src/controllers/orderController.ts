@@ -79,7 +79,16 @@ export const getOrderById = async (req: Request, res: Response) => {
 };
 
 export const createOrder = async (req: Request, res: Response) => {
-  const { items, tableId, userId }: { items: { productId: number; quantity: number }[]; tableId?: number; userId?: number } = req.body;
+  const { items, tableId, userId: manualUserId }: { items: { productId: number; quantity: number }[]; tableId?: number; userId?: number } = req.body;
+  const tokenUserId = req.user?.id; // Ambil userId dari token JWT jika login
+
+  // Jika user login, gunakan userId dari token, jangan izinkan manual input userId
+  if (tokenUserId && manualUserId && tokenUserId !== manualUserId) {
+    return res.status(400).json({ message: 'Cannot specify userId manually when logged in. UserId will be taken from JWT token.' });
+  }
+
+  const userId = tokenUserId || manualUserId; // Prioritas dari token, jika tidak ada token maka dari body (untuk backward compatibility)
+
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ message: 'Items are required' });
   }
@@ -154,10 +163,36 @@ export const createOrder = async (req: Request, res: Response) => {
         });
       }
 
-      return order;
+      // Berikan poin ke pengguna biasa
+      let pointsAdded = 0;
+      if (userId !== undefined) {
+        const user = await tx.user.findUnique({
+          where: { id: userId },
+          select: { role: true }
+        });
+        if (user && user.role === 'user') {
+          pointsAdded = Math.floor(totalPrice / 2);
+          await tx.user.update({
+            where: { id: userId },
+            data: { point: { increment: pointsAdded } }
+          });
+        }
+      }
+
+      return { order, pointsAdded };
     });
 
-    res.status(201).json({ message: 'Order created successfully', data: newOrder });
+    const responseMessage = userId
+      ? `Order created successfully. Points added: ${newOrder.pointsAdded}`
+      : 'Order created successfully. No points added (not logged in)';
+
+    res.status(201).json({
+      message: responseMessage,
+      data: {
+        ...newOrder.order,
+        pointsAdded: newOrder.pointsAdded
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error creating order', error });
   }
@@ -172,7 +207,7 @@ export const updateOrder = async (req: Request, res: Response) => {
       await prisma.orderItems.deleteMany({
         where: { orderId: id }
       });
-      // menghitung ulang totalPrice dan menambahkan item baru
+      // Hitung ulang totalPrice dan tambahkan item baru
       let totalPrice = 0;
       const orderItems = [];
       for (const item of items) {
@@ -259,7 +294,7 @@ export const getOrderSummary = async (req: Request, res: Response) => {
     const take = limit ? parseInt(limit as string) : 10;
     const skip = offset ? parseInt(offset as string) : 0;
 
-    // menampilkan seluruh item berdasarkan tanggal (createdAt)
+    // Tampilkan seluruh item berdasarkan tanggal (createdAt)
     const orders = await prisma.orders.findMany({
       select: {
         createdAt: true,
@@ -268,7 +303,7 @@ export const getOrderSummary = async (req: Request, res: Response) => {
       orderBy: {
         createdAt: 'desc'
       },
-      take: 1000, //limitasi besar untuk mengambil data
+      take: 1000, // Limitasi besar untuk mengambil data
       skip: 0
     });
 

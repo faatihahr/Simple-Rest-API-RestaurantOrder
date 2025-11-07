@@ -85,17 +85,25 @@ model meja {
   orders      orders[]
 }
 
+enum Role {
+  admin
+  user
+  supplier
+}
+
 model user {
   id         Int      @id @default(autoincrement())
   name       String
   email      String   @unique
   password   String
+  role       Role     @default(user)
   point      Int      @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   orders     orders[]
   favorites  user_favorites[]
   reviews    user_reviews[]
+  supplier   Supplier?
 }
 
 model user_favorites {
@@ -131,6 +139,8 @@ model user_reviews {
 
 model Supplier {
   id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  user      user     @relation(fields: [userId], references: [id])
   name      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

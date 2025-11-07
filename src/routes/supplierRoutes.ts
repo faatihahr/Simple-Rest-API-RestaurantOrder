@@ -1,24 +1,21 @@
 import express from 'express';
-import { createSupplier, createStock, getSuppliers, getStocks, updateStock, deleteStock } from '../controllers/supplierController.js';
+import { registerSupplier, createStock, getSuppliers, getStocks, updateStock, deleteStock } from '../controllers/supplierController.js';
+import { authorize } from '../middleware/auth-middleware.js';
+import { supplierLogin } from '../controllers/authController.js';
 
 const router = express.Router();
 
-// Batch update stocks
-router.post('/stock', updateStock);
+// Rute umum
+router.post('/register', registerSupplier);
+router.post('/login', supplierLogin);
 
-// Batch delete stocks
-router.delete('/delete', deleteStock);
-
-// create a new supplier
-router.post('/create', createSupplier);
-
-// show all suppliers
+// Rute yang bisa diakses admin sama user
 router.get('/', getSuppliers);
-
-// create a new stock item
-router.post('/create/stocks', createStock);
-
-// get all stocks, with optional supplierId filter and limit
 router.get('/get/stocks', getStocks);
+
+// Rute yang bisa diakses admin dan supplier
+router.post('/add/stock', authorize(['admin', 'supplier']), createStock);
+router.post('/stock', authorize(['admin', 'supplier']), updateStock);
+router.delete('/delete', authorize(['admin', 'supplier']), deleteStock);
 
 export default router;

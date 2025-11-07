@@ -1,8 +1,9 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma.js';
+import { registerSupplierSchema, createStockSchema } from '../lib/validation.js';
 
-// Validasi untuk pembaruan stok
+// Validasi buat update stok
 const validateStockUpdate = (updates: { stockId: number; quantityChange: number }[]) => {
   for (const update of updates) {
     if (update.quantityChange < 0) {
@@ -11,7 +12,7 @@ const validateStockUpdate = (updates: { stockId: number; quantityChange: number 
   }
 };
 
-// Perbarui ketersediaan produk berdasarkan stok
+// Update ketersediaan produk berdasarkan stok
 const updateProductAvailability = async () => {
   const products = await prisma.products.findMany({
     include: {
@@ -41,13 +42,7 @@ const updateProductAvailability = async () => {
 export const updateStock = async (req: Request, res: Response, next: NextFunction) => {
   const { updates }: { updates: { stockId: number; quantityChange: number }[] } = req.body;
 
-  if (!updates || !Array.isArray(updates)) {
-    return res.status(400).json({ message: 'Updates array is required' });
-  }
-
   try {
-    // Validasi untuk pembaruan stok
-    validateStockUpdate(updates);
 
     const updatedStocks: { stockId: number; beforeQuantity: number; afterQuantity: number; quantityChange: number }[] = [];
 
@@ -121,48 +116,118 @@ export const updateStock = async (req: Request, res: Response, next: NextFunctio
   }
 };
 
-export const createSupplier = async (req: Request, res: Response, next: NextFunction) => {
-  const { name, stocks } = req.body;
-
-  if (!name) {
-    return res.status(400).json({ message: 'Supplier name is required' });
-  }
-
+export const registerSupplier = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const supplier = await prisma.supplier.create({
-      data: {
+    // Validate input using Joi
+    const { error, value } = registerSupplierSchema.validate(req.body);
+    if (error) {
+      throw new Error(error.details?.[0]?.message || 'Validation error');
+    }
+
+    const { name, email, password, stocks } = value;
+
+    // Check if user already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email }
+    });
+
+    if (existingUser) {
+      throw new Error('Email already exists');
+    }
+
+    // Hash password
+    const bcrypt = await import('bcrypt');
+    const hashedPassword = await bcrypt.default.hash(password, 10);
+
+    // Create user and supplier in transaction
+    const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const user = await tx.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+          role: 'supplier'
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          createdAt: true
+        }
+      });
+
+      const supplierData: any = {
+        userId: user.id,
         name,
-        stocks: stocks ? {
+      };
+
+      if (stocks) {
+        supplierData.stocks = {
           create: stocks.map((stock: any) => ({
             name: stock.name,
             quantity: stock.quantity || 0,
             unit: stock.unit,
           })),
-        } : undefined,
-      },
-      include: { stocks: true },
+        };
+      }
+
+      const supplier = await tx.supplier.create({
+        data: supplierData,
+        include: { stocks: true },
+      });
+
+      return { user, supplier };
     });
 
-    res.status(201).json({ message: 'Supplier created successfully', data: supplier });
+    // Generate JWT token
+    const jwt = await import('jsonwebtoken');
+    const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+    const token = jwt.default.sign(
+      { id: result.user.id, email: result.user.email, role: result.user.role },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.status(201).json({
+      message: 'Supplier registered successfully',
+      user: result.user,
+      supplier: result.supplier,
+      token
+    });
   } catch (error) {
     next(error);
   }
 };
 
 export const createStock = async (req: Request, res: Response, next: NextFunction) => {
-  const { name, quantity, unit, supplierId } = req.body;
-
-  if (!name || !unit || !supplierId) {
-    return res.status(400).json({ message: 'Name, unit, and supplierId are required' });
+  if (!req.user || req.user.role !== 'supplier') {
+    return res.status(403).json({ message: 'Only logged-in suppliers can create stock' });
   }
 
   try {
+    // Validate input using Joi
+    const { error, value } = createStockSchema.validate(req.body);
+    if (error) {
+      throw new Error(error.details?.[0]?.message || 'Validation error');
+    }
+
+    const { name, quantity, unit } = value;
+    // Find supplier by userId
+    const supplier = await prisma.supplier.findUnique({
+      where: { userId: req.user.id }
+    });
+
+    if (!supplier) {
+      return res.status(404).json({ message: 'Supplier not found' });
+    }
+
     const stock = await prisma.stock.create({
       data: {
         name,
         quantity: quantity || 0,
         unit,
-        supplierId,
+        supplierId: supplier.id,
       },
       include: { supplier: true },
     });
@@ -200,10 +265,6 @@ export const getStocks = async (req: Request, res: Response, next: NextFunction)
 export const deleteStock = async (req: Request, res: Response, next: NextFunction) => {
   const { stockUpdates }: { stockUpdates: { stockId: number; quantityToDelete: number }[] } = req.body;
 
-  if (!stockUpdates || !Array.isArray(stockUpdates)) {
-    return res.status(400).json({ message: 'stockUpdates array is required' });
-  }
-
   try {
     const updatedStocks: { stockId: number; beforeQuantity: number; afterQuantity: number; quantityDeleted: number }[] = [];
 
@@ -219,7 +280,7 @@ export const deleteStock = async (req: Request, res: Response, next: NextFunctio
           throw new Error(`Stock with id ${update.stockId} not found`);
         }
 
-        // hitung kuantitas baru
+        // Hitung kuantitas baru
         const beforeQuantity = stock.quantity;
         const newQuantity = Math.max(0, stock.quantity - update.quantityToDelete); // Prevent negative quantity
 
@@ -241,7 +302,7 @@ export const deleteStock = async (req: Request, res: Response, next: NextFunctio
     // Update produk yang tersedia berdasarkan stok yang diperbarui
     await updateProductAvailability();
 
-    // Mnampilkan produk yang terpengaruh (tidak tersedia atau diarsipkan)
+    // Menampilkan produk yang terpengaruh (tidak tersedia atau diarsipkan)
     const affectedProducts = await prisma.products.findMany({
       where: {
         OR: [

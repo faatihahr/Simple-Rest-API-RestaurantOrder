@@ -1,33 +1,33 @@
 import prisma from '../lib/prisma.js';
-export const transferPoints = async (req, res) => {
-    const { senderId, receiverId, points } = req.body;
-    if (!senderId || !receiverId || !points) {
-        return res.status(400).json({ message: 'senderId, receiverId, and points are required' });
-    }
-    if (points <= 0) {
-        return res.status(400).json({ message: 'Points must be greater than 0' });
-    }
-    if (senderId === receiverId) {
-        return res.status(400).json({ message: 'Sender and receiver cannot be the same' });
-    }
+export const transferPoints = async (req, res, next) => {
     try {
-        // Fetch sender and receiver points before transaction
+        const { senderId, receiverId, points } = req.body;
+        if (!senderId || !receiverId || !points) {
+            throw new Error('senderId, receiverId, and points are required');
+        }
+        if (points <= 0) {
+            throw new Error('Points must be greater than 0');
+        }
+        if (senderId === receiverId) {
+            throw new Error('Sender and receiver cannot be the same');
+        }
+        // Memeriksa poin pengirim sebelum transaksi
         const senderBefore = await prisma.user.findUnique({
             where: { id: senderId },
             select: { point: true }
         });
         if (!senderBefore) {
-            return res.status(400).json({ message: 'Sender not found' });
+            throw new Error('Sender not found');
         }
         const receiverBefore = await prisma.user.findUnique({
             where: { id: receiverId },
             select: { point: true }
         });
         if (!receiverBefore) {
-            return res.status(400).json({ message: 'Receiver not found' });
+            throw new Error('Receiver not found');
         }
         if (senderBefore.point < points) {
-            return res.status(400).json({ message: 'Not enough points!' });
+            throw new Error('Not enough points!');
         }
         // Transaction process
         await prisma.$transaction(async (tx) => {
@@ -42,7 +42,7 @@ export const transferPoints = async (req, res) => {
                 data: { point: { increment: points } }
             });
         });
-        // Fetch points after transaction
+        // Memeriksa poin setelah transaksi
         const senderAfter = await prisma.user.findUnique({
             where: { id: senderId },
             select: { point: true }
@@ -68,12 +68,12 @@ export const transferPoints = async (req, res) => {
         });
     }
     catch (error) {
-        res.status(500).json({ message: 'Error transferring points', error: error.message });
+        next(error);
     }
 };
-export const getUsers = async (req, res) => {
-    const { email, limit } = req.query;
+export const getUsers = async (req, res, next) => {
     try {
+        const { email, limit } = req.query;
         const where = {};
         if (email) {
             where.email = {
@@ -89,6 +89,7 @@ export const getUsers = async (req, res) => {
                 id: true,
                 name: true,
                 email: true,
+                role: true,
                 point: true,
                 createdAt: true,
                 updatedAt: true
@@ -97,32 +98,47 @@ export const getUsers = async (req, res) => {
         res.json({ users });
     }
     catch (error) {
-        res.status(500).json({ message: 'Error fetching users', error: error.message });
+        next(error);
     }
 };
-export const createUser = async (req, res) => {
-    const body = req.body;
-    const { name, email, password } = body;
-    if (!name || !email || !password) {
-        return res.status(400).json({ message: 'name, email, and password are required' });
-    }
+export const createUser = async (req, res, next) => {
     try {
+        const body = req.body;
+        const { name, email, password, role } = body;
+        if (!name || !email || !password) {
+            throw new Error('name, email, and password are required');
+        }
+        // Email format validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            throw new Error('Invalid email format');
+        }
+        // Password validation: min 8 chars, at least 1 uppercase, 1 symbol
+        const passwordRegex = /^(?=.*[A-Z])(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
+        if (!passwordRegex.test(password)) {
+            throw new Error('Password must be at least 8 characters long, contain at least one uppercase letter, and one symbol');
+        }
         const existingUser = await prisma.user.findUnique({
             where: { email: email }
         });
         if (existingUser) {
-            return res.status(400).json({ message: 'Email already exists' });
+            throw new Error('Email already exists');
         }
+        // Hash password
+        const bcrypt = await import('bcrypt');
+        const hashedPassword = await bcrypt.default.hash(password, 10);
         const user = await prisma.user.create({
             data: {
                 name,
                 email,
-                password
+                password: hashedPassword,
+                role: role || 'user'
             },
             select: {
                 id: true,
                 name: true,
                 email: true,
+                role: true,
                 point: true,
                 createdAt: true,
                 updatedAt: true
@@ -131,32 +147,39 @@ export const createUser = async (req, res) => {
         res.status(201).json({ user });
     }
     catch (error) {
-        res.status(500).json({ message: 'Error creating user', error: error.message });
+        next(error);
     }
 };
-export const updateUser = async (req, res) => {
-    const { id } = req.params;
-    const { name, email, password, point } = req.body;
-    if (!id) {
-        return res.status(400).json({ message: 'User ID is required' });
-    }
-    const userId = parseInt(id);
-    if (isNaN(userId)) {
-        return res.status(400).json({ message: 'Invalid user ID' });
-    }
+export const updateUser = async (req, res, next) => {
     try {
+        const { id } = req.params;
+        const { name, email, password, point } = req.body;
+        if (!id) {
+            throw new Error('User ID is required');
+        }
+        const userId = parseInt(id);
+        if (isNaN(userId)) {
+            throw new Error('Invalid user ID');
+        }
+        // Check if user is authenticated and owns the data
+        if (!req.user) {
+            throw new Error('Authentication required');
+        }
+        if (req.user.id !== userId) {
+            throw new Error('You can only update your own data');
+        }
         const existingUser = await prisma.user.findUnique({
             where: { id: userId }
         });
         if (!existingUser) {
-            return res.status(404).json({ message: 'User not found' });
+            throw new Error('User not found');
         }
         if (email) {
             const emailExists = await prisma.user.findUnique({
                 where: { email: email }
             });
             if (emailExists && emailExists.id !== userId) {
-                return res.status(400).json({ message: 'Email already exists' });
+                throw new Error('Email already exists');
             }
         }
         const user = await prisma.user.update({
@@ -171,6 +194,7 @@ export const updateUser = async (req, res) => {
                 id: true,
                 name: true,
                 email: true,
+                role: true,
                 point: true,
                 createdAt: true,
                 updatedAt: true
@@ -179,24 +203,31 @@ export const updateUser = async (req, res) => {
         res.json({ user });
     }
     catch (error) {
-        res.status(500).json({ message: 'Error updating user', error: error.message });
+        next(error);
     }
 };
-export const deleteUser = async (req, res) => {
-    const { id } = req.params;
-    if (!id) {
-        return res.status(400).json({ message: 'User ID is required' });
-    }
-    const userId = parseInt(id);
-    if (isNaN(userId)) {
-        return res.status(400).json({ message: 'Invalid user ID' });
-    }
+export const deleteUser = async (req, res, next) => {
     try {
+        const { id } = req.params;
+        if (!id) {
+            throw new Error('User ID is required');
+        }
+        const userId = parseInt(id);
+        if (isNaN(userId)) {
+            throw new Error('Invalid user ID');
+        }
+        // Check if user is authenticated and owns the data
+        if (!req.user) {
+            throw new Error('Authentication required');
+        }
+        if (req.user.id !== userId) {
+            throw new Error('You can only delete your own data');
+        }
         const existingUser = await prisma.user.findUnique({
             where: { id: userId }
         });
         if (!existingUser) {
-            return res.status(404).json({ message: 'User not found' });
+            throw new Error('User not found');
         }
         await prisma.user.delete({
             where: { id: userId }
@@ -204,7 +235,7 @@ export const deleteUser = async (req, res) => {
         res.json({ message: 'User deleted successfully' });
     }
     catch (error) {
-        res.status(500).json({ message: 'Error deleting user', error: error.message });
+        next(error);
     }
 };
 //# sourceMappingURL=userController.js.map

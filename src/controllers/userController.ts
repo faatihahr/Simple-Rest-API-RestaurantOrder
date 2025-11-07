@@ -5,18 +5,10 @@ export const transferPoints = async (req: Request, res: Response, next: NextFunc
   try {
     const { senderId, receiverId, points }: { senderId: number; receiverId: number; points: number } = req.body;
 
-    if (!senderId || !receiverId || !points) {
-      throw new Error('senderId, receiverId, and points are required');
-    }
-
-    if (points <= 0) {
-      throw new Error('Points must be greater than 0');
-    }
-
     if (senderId === receiverId) {
       throw new Error('Sender and receiver cannot be the same');
     }
-    // Memeriksa poin pengirim sebelum transaksi
+    // Cek poin pengirim sebelum transaksi
     const senderBefore = await prisma.user.findUnique({
       where: { id: senderId },
       select: { point: true }
@@ -39,22 +31,22 @@ export const transferPoints = async (req: Request, res: Response, next: NextFunc
       throw new Error('Not enough points!');
     }
 
-    // Transaction process
+    // Proses transaksi
     await prisma.$transaction(async (tx: any) => {
-      // Deduct from sender
+      // Kurangin dari pengirim
       await tx.user.update({
         where: { id: senderId },
         data: { point: { decrement: points } }
       });
 
-      // Add to receiver
+      // Tambahin ke penerima
       await tx.user.update({
         where: { id: receiverId },
         data: { point: { increment: points } }
       });
     });
 
-    // Memeriksa poin setelah transaksi
+    // Cek poin setelah transaksi
     const senderAfter = await prisma.user.findUnique({
       where: { id: senderId },
       select: { point: true }
@@ -105,6 +97,7 @@ export const getUsers = async (req: Request, res: Response, next: NextFunction) 
         id: true,
         name: true,
         email: true,
+        role: true,
         point: true,
         createdAt: true,
         updatedAt: true
@@ -119,12 +112,9 @@ export const getUsers = async (req: Request, res: Response, next: NextFunction) 
 
 export const createUser = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const body = req.body as { name: string; email: string; password: string };
-    const { name, email, password } = body;
+    const body = req.body as { name: string; email: string; password: string; role?: 'admin' | 'user' };
+    const { name, email, password, role } = body;
 
-    if (!name || !email || !password) {
-      throw new Error('name, email, and password are required');
-    }
     const existingUser = await prisma.user.findUnique({
       where: { email: email! }
     });
@@ -133,16 +123,22 @@ export const createUser = async (req: Request, res: Response, next: NextFunction
       throw new Error('Email already exists');
     }
 
+    // Hash password
+    const bcrypt = await import('bcrypt');
+    const hashedPassword = await bcrypt.default.hash(password, 10);
+
     const user = await prisma.user.create({
       data: {
         name,
         email,
-        password
+        password: hashedPassword,
+        role: role || 'user'
       },
       select: {
         id: true,
         name: true,
         email: true,
+        role: true,
         point: true,
         createdAt: true,
         updatedAt: true
@@ -168,6 +164,16 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
     if (isNaN(userId)) {
       throw new Error('Invalid user ID');
     }
+
+    // Check if user is authenticated and owns the data
+    if (!req.user) {
+      throw new Error('Authentication required');
+    }
+
+    if (req.user.id !== userId) {
+      throw new Error('You can only update your own data');
+    }
+
     const existingUser = await prisma.user.findUnique({
       where: { id: userId }
     });
@@ -197,6 +203,7 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
         id: true,
         name: true,
         email: true,
+        role: true,
         point: true,
         createdAt: true,
         updatedAt: true
@@ -221,6 +228,16 @@ export const deleteUser = async (req: Request, res: Response, next: NextFunction
     if (isNaN(userId)) {
       throw new Error('Invalid user ID');
     }
+
+    // Check if user is authenticated and owns the data
+    if (!req.user) {
+      throw new Error('Authentication required');
+    }
+
+    if (req.user.id !== userId) {
+      throw new Error('You can only delete your own data');
+    }
+
     const existingUser = await prisma.user.findUnique({
       where: { id: userId }
     });

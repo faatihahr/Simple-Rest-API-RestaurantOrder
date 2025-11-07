@@ -119,14 +119,19 @@ async function main() {
   });
 
   // Seed users
+  const bcrypt = await import('bcrypt');
+  const hashedPassword1 = await bcrypt.default.hash('Password123!', 10);
+  const hashedPassword2 = await bcrypt.default.hash('Password456!', 10);
+  const hashedPassword3 = await bcrypt.default.hash('Supplier789!', 10);
+
   const user1 = await prisma.user.upsert({
     where: { email: 'john.doe@example.com' },
     update: {},
     create: {
       name: 'John Doe',
       email: 'john.doe@example.com',
-      password: 'hashedpassword123', // hash dilakukan di real app
-      point: 100,
+      password: hashedPassword1,
+      role: 'admin',
     },
   });
 
@@ -136,8 +141,19 @@ async function main() {
     create: {
       name: 'Jane Smith',
       email: 'jane.smith@example.com',
-      password: 'hashedpassword456',
-      point: 50,
+      password: hashedPassword2,
+      role: 'user',
+    },
+  });
+
+  const supplierUser = await prisma.user.upsert({
+    where: { email: 'supplier@example.com' },
+    update: {},
+    create: {
+      name: 'Supplier One',
+      email: 'supplier@example.com',
+      password: hashedPassword3,
+      role: 'supplier',
     },
   });
 
@@ -279,17 +295,37 @@ async function main() {
     },
   });
 
+  // Delete existing suppliers, stocks, and product stocks to avoid constraint issues
+  await prisma.productStock.deleteMany({});
+  await prisma.stock.deleteMany({});
+  await prisma.supplier.deleteMany({});
+
   // Seed suppliers
-  const supplierA = await prisma.supplier.upsert({
-    where: { name: 'Acme Supplies' },
-    update: {},
-    create: { name: 'Acme Supplies' },
+  const supplierA = await prisma.supplier.create({
+    data: {
+      userId: supplierUser.id,
+      name: 'Acme Supplies'
+    },
   });
 
-  const supplierB = await prisma.supplier.upsert({
-    where: { name: 'Fresh Farm' },
+  // Create another supplier user for supplierB
+  const hashedPassword4 = await bcrypt.default.hash('Supplier456!', 10);
+  const supplierUser2 = await prisma.user.upsert({
+    where: { email: 'supplier2@example.com' },
     update: {},
-    create: { name: 'Fresh Farm' },
+    create: {
+      name: 'Supplier Two',
+      email: 'supplier2@example.com',
+      password: hashedPassword4,
+      role: 'supplier',
+    },
+  });
+
+  const supplierB = await prisma.supplier.create({
+    data: {
+      userId: supplierUser2.id,
+      name: 'Fresh Farm'
+    },
   });
 
   // Seed stocks (create if not exists)

@@ -1,0 +1,6 @@
+import Joi from 'joi';
+export declare const registerSchema: Joi.ObjectSchema<any>;
+export declare const loginSchema: Joi.ObjectSchema<any>;
+export declare const createStockSchema: Joi.ObjectSchema<any>;
+export declare const registerSupplierSchema: Joi.ObjectSchema<any>;
+//# sourceMappingURL=validation.d.ts.map

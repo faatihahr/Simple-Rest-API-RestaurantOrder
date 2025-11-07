@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma.js';
+import { PrismaClient } from '@prisma/client';
 export const getOrders = async (req, res) => {
     try {
         const { sort, limit, offset } = req.query;
@@ -68,17 +69,35 @@ export const getOrderById = async (req, res) => {
     }
 };
 export const createOrder = async (req, res) => {
-    const { items, tableId, userId } = req.body;
+    const { items, tableId, userId: manualUserId } = req.body;
+    const tokenUserId = req.user?.id; // Ambil userId dari token JWT jika login
+    // Jika user login, gunakan userId dari token, jangan izinkan manual input userId
+    if (tokenUserId && manualUserId && tokenUserId !== manualUserId) {
+        return res.status(400).json({ message: 'Cannot specify userId manually when logged in. UserId will be taken from JWT token.' });
+    }
+    const userId = tokenUserId || manualUserId; // Prioritas dari token, jika tidak ada token maka dari body (untuk backward compatibility)
     if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ message: 'Items are required' });
     }
     try {
         let totalPrice = 0;
         const orderItems = [];
+        const stockUpdates = [];
         for (const item of items) {
-            const product = await prisma.products.findUnique({ where: { id: item.productId } });
+            const product = await prisma.products.findUnique({
+                where: { id: item.productId },
+                include: { stocks: { include: { stock: true } } }
+            });
             if (!product) {
                 return res.status(400).json({ message: `Product with id ${item.productId} not found` });
+            }
+            // Mengecek dan mengurangi stok yang tersedia
+            for (const prodStock of product.stocks) {
+                const required = prodStock.quantityRequired * item.quantity;
+                if (prodStock.stock.quantity < required) {
+                    return res.status(400).json({ message: `Insufficient stock for ${prodStock.stock.name}` });
+                }
+                stockUpdates.push({ stockId: prodStock.stockId, reduceBy: required });
             }
             const price = product.price * item.quantity;
             totalPrice += price;
@@ -88,32 +107,70 @@ export const createOrder = async (req, res) => {
                 price
             });
         }
-        const newOrder = await prisma.orders.create({
-            data: {
+        // Transaksi untuk membuat order dan memperbarui stok
+        const newOrder = await prisma.$transaction(async (tx) => {
+            const orderData = {
                 totalPrice,
-                tableId,
-                userId,
                 items: {
                     create: orderItems
                 }
-            },
-            include: {
-                items: {
-                    include: {
-                        product: {
-                            select: {
-                                id: true,
-                                name: true,
-                                price: true
+            };
+            if (tableId !== undefined)
+                orderData.tableId = tableId;
+            if (userId !== undefined)
+                orderData.userId = userId;
+            const order = await tx.orders.create({
+                data: orderData,
+                include: {
+                    items: {
+                        include: {
+                            product: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    price: true
+                                }
                             }
                         }
-                    }
-                },
-                table: true,
-                user: true
+                    },
+                    table: true,
+                    user: true
+                }
+            });
+            // Update jumlah stok
+            for (const update of stockUpdates) {
+                await tx.stock.update({
+                    where: { id: update.stockId },
+                    data: { quantity: { decrement: update.reduceBy } }
+                });
+            }
+            // Award points to regular users
+            let pointsAdded = 0;
+            if (userId !== undefined) {
+                const user = await tx.user.findUnique({
+                    where: { id: userId },
+                    select: { role: true }
+                });
+                if (user && user.role === 'user') {
+                    pointsAdded = Math.floor(totalPrice / 2);
+                    await tx.user.update({
+                        where: { id: userId },
+                        data: { point: { increment: pointsAdded } }
+                    });
+                }
+            }
+            return { order, pointsAdded };
+        });
+        const responseMessage = userId
+            ? `Order created successfully. Points added: ${newOrder.pointsAdded}`
+            : 'Order created successfully. No points added (not logged in)';
+        res.status(201).json({
+            message: responseMessage,
+            data: {
+                ...newOrder.order,
+                pointsAdded: newOrder.pointsAdded
             }
         });
-        res.status(201).json({ message: 'Order created successfully', data: newOrder });
     }
     catch (error) {
         res.status(500).json({ message: 'Error creating order', error });
