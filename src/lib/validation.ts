@@ -33,14 +33,14 @@ export const registerSupplierSchema = Joi.object({
   })).optional()
 });
 
-// Schema buat transfer points
+// Schema buat transfer poin
 export const transferPointsSchema = Joi.object({
   senderId: Joi.number().integer().positive().required(),
   receiverId: Joi.number().integer().positive().required(),
   points: Joi.number().integer().min(1).required()
 });
 
-// Schema buat update stock
+// Schema buat update stok
 export const updateStockSchema = Joi.object({
   updates: Joi.array().items(Joi.object({
     stockId: Joi.number().integer().positive().required(),
@@ -48,7 +48,7 @@ export const updateStockSchema = Joi.object({
   })).required()
 });
 
-// Schema buat delete stock
+// Schema buat hapus stok
 export const deleteStockSchema = Joi.object({
   stockUpdates: Joi.array().items(Joi.object({
     stockId: Joi.number().integer().positive().required(),

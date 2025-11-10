@@ -1,5 +1,20 @@
 export const errorHandler = (err, req, res, next) => {
     console.error(err.stack);
+    // Upload-specific errors
+    if (err.message.includes('Invalid image file') ||
+        err.message.includes('Maximum') && err.message.includes('images allowed') ||
+        err.message.includes('Only one profile image is allowed') ||
+        err.message.includes('File too large') ||
+        err.message.includes('Too many files') ||
+        err.message.includes('Field value too long')) {
+        return res.status(400).json({ message: 'Upload validation failed', error: err.message });
+    }
+    // File upload library errors (check for error codes in message or custom property)
+    if (err.message.includes('LIMIT_FILE_SIZE') || err.message.includes('LIMIT_FILE_COUNT') ||
+        err.message.includes('LIMIT_FIELD_KEY') || err.message.includes('LIMIT_FIELD_VALUE') ||
+        err.message.includes('LIMIT_FIELD_COUNT') || err.message.includes('LIMIT_UNEXPECTED_FILE')) {
+        return res.status(400).json({ message: 'File upload limit exceeded', error: 'File size or count exceeds allowed limits' });
+    }
     if (err.message.includes('Stock with id') && err.message.includes('not found')) {
         return res.status(404).json({ message: 'Stock not found', error: err.message });
     }

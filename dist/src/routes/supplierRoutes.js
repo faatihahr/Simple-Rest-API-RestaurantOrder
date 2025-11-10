@@ -3,13 +3,13 @@ import { registerSupplier, createStock, getSuppliers, getStocks, updateStock, de
 import { authorize } from '../middleware/auth-middleware.js';
 import { supplierLogin } from '../controllers/authController.js';
 const router = express.Router();
-// Public routes
+// Rute umum
 router.post('/register', registerSupplier);
 router.post('/login', supplierLogin);
-// Routes accessible by both admin and user
+// Rute yang bisa diakses admin sama user
 router.get('/', getSuppliers);
 router.get('/get/stocks', getStocks);
-// Routes accessible by admin and supplier
+// Rute yang bisa diakses admin dan supplier
 router.post('/add/stock', authorize(['admin', 'supplier']), createStock);
 router.post('/stock', authorize(['admin', 'supplier']), updateStock);
 router.delete('/delete', authorize(['admin', 'supplier']), deleteStock);

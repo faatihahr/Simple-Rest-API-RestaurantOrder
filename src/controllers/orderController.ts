@@ -87,7 +87,7 @@ export const createOrder = async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'Cannot specify userId manually when logged in. UserId will be taken from JWT token.' });
   }
 
-  const userId = tokenUserId || manualUserId; // Prioritas dari token, jika tidak ada token maka dari body (untuk backward compatibility)
+  const userId = tokenUserId || manualUserId; // Prioritas dari token, jika tidak ada token maka dari body
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ message: 'Items are required' });

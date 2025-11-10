@@ -1,17 +1,12 @@
 import prisma from '../lib/prisma.js';
+import { saveUploadedFile, validateImageFile, getUploadedFiles } from '../lib/upload.js';
 export const transferPoints = async (req, res, next) => {
     try {
         const { senderId, receiverId, points } = req.body;
-        if (!senderId || !receiverId || !points) {
-            throw new Error('senderId, receiverId, and points are required');
-        }
-        if (points <= 0) {
-            throw new Error('Points must be greater than 0');
-        }
         if (senderId === receiverId) {
             throw new Error('Sender and receiver cannot be the same');
         }
-        // Memeriksa poin pengirim sebelum transaksi
+        // Cek poin pengirim sebelum transaksi
         const senderBefore = await prisma.user.findUnique({
             where: { id: senderId },
             select: { point: true }
@@ -29,20 +24,20 @@ export const transferPoints = async (req, res, next) => {
         if (senderBefore.point < points) {
             throw new Error('Not enough points!');
         }
-        // Transaction process
+        // Proses transaksi
         await prisma.$transaction(async (tx) => {
-            // Deduct from sender
+            // Kurangin dari pengirim
             await tx.user.update({
                 where: { id: senderId },
                 data: { point: { decrement: points } }
             });
-            // Add to receiver
+            // Tambahin ke penerima
             await tx.user.update({
                 where: { id: receiverId },
                 data: { point: { increment: points } }
             });
         });
-        // Memeriksa poin setelah transaksi
+        // Cek poin setelah transaksi
         const senderAfter = await prisma.user.findUnique({
             where: { id: senderId },
             select: { point: true }
@@ -105,19 +100,6 @@ export const createUser = async (req, res, next) => {
     try {
         const body = req.body;
         const { name, email, password, role } = body;
-        if (!name || !email || !password) {
-            throw new Error('name, email, and password are required');
-        }
-        // Email format validation
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            throw new Error('Invalid email format');
-        }
-        // Password validation: min 8 chars, at least 1 uppercase, 1 symbol
-        const passwordRegex = /^(?=.*[A-Z])(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
-        if (!passwordRegex.test(password)) {
-            throw new Error('Password must be at least 8 characters long, contain at least one uppercase letter, and one symbol');
-        }
         const existingUser = await prisma.user.findUnique({
             where: { email: email }
         });
@@ -182,13 +164,40 @@ export const updateUser = async (req, res, next) => {
                 throw new Error('Email already exists');
             }
         }
+        // Handle profile image upload (only one image allowed)
+        let profileImageUrl;
+        const files = getUploadedFiles(req);
+        if (files && files.profileImage) {
+            const profileImages = Array.isArray(files.profileImage) ? files.profileImage : [files.profileImage];
+            // Limit to one profile image
+            if (profileImages.length > 1) {
+                throw new Error('Only one profile image is allowed.');
+            }
+            const profileImage = profileImages[0];
+            if (profileImage) {
+                // Additional validation: Check for empty files
+                if (profileImage.size === 0) {
+                    throw new Error('Profile image file is empty.');
+                }
+                // Validate image file with enhanced security checks
+                if (!validateImageFile(profileImage)) {
+                    throw new Error('Invalid profile image file. Only JPEG, PNG, GIF, and WebP files up to 10MB are allowed.');
+                }
+                // Check filename for path traversal attempts
+                if (profileImage.name.includes('..') || profileImage.name.includes('/') || profileImage.name.includes('\\')) {
+                    throw new Error('Invalid filename.');
+                }
+                profileImageUrl = await saveUploadedFile(profileImage, 'profiles');
+            }
+        }
         const user = await prisma.user.update({
             where: { id: userId },
             data: {
                 ...(name && { name }),
                 ...(email && { email }),
                 ...(password && { password }),
-                ...(point !== undefined && { point })
+                ...(point !== undefined && { point }),
+                ...(profileImageUrl && { profileImage: profileImageUrl })
             },
             select: {
                 id: true,
@@ -196,6 +205,7 @@ export const updateUser = async (req, res, next) => {
                 email: true,
                 role: true,
                 point: true,
+                profileImage: true,
                 createdAt: true,
                 updatedAt: true
             }

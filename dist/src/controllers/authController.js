@@ -5,13 +5,13 @@ import { registerSchema, loginSchema } from '../lib/validation.js';
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'; // Use environment variable in production
 export const login = async (req, res, next) => {
     try {
-        // Validate input using Joi
+        // Validasi input pake Joi
         const { error, value } = loginSchema.validate(req.body);
         if (error) {
             throw new Error(error.details?.[0]?.message || 'Validation error');
         }
         const { email, password } = value;
-        // Find user by email
+        // Cari user berdasarkan email
         const user = await prisma.user.findUnique({
             where: { email },
             select: {
@@ -27,14 +27,14 @@ export const login = async (req, res, next) => {
         if (!user) {
             throw new Error('Email not registered');
         }
-        // Compare password
+        // Bandingin password
         const isPasswordValid = await bcrypt.compare(password, user.password);
         if (!isPasswordValid) {
             throw new Error('Invalid password');
         }
         // Generate JWT token
         const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
-        // Remove password from response
+        // Hapus password dari response
         const { password: _, ...userWithoutPassword } = user;
         res.status(200).json({
             message: 'Login successful',
@@ -48,13 +48,13 @@ export const login = async (req, res, next) => {
 };
 export const register = async (req, res, next) => {
     try {
-        // Validate input using Joi
+        // Validasi input pake Joi
         const { error, value } = registerSchema.validate(req.body);
         if (error) {
             throw new Error(error.details?.[0]?.message || 'Validation error');
         }
         const { name, email, password, role } = value;
-        // Check if user already exists
+        // Cek apakah user udah ada
         const existingUser = await prisma.user.findUnique({
             where: { email }
         });
@@ -63,13 +63,13 @@ export const register = async (req, res, next) => {
         }
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
-        // Create user
+        // Buat user
         const user = await prisma.user.create({
             data: {
                 name,
                 email,
                 password: hashedPassword,
-                role: role || 'user' // Default to 'user' if not specified
+                role: role || 'user' // Default ke 'user' kalau ga ditentuin
             },
             select: {
                 id: true,
@@ -94,13 +94,13 @@ export const register = async (req, res, next) => {
 };
 export const supplierLogin = async (req, res, next) => {
     try {
-        // Validate input using Joi
+        // Validasi input pake Joi
         const { error, value } = loginSchema.validate(req.body);
         if (error) {
             throw new Error(error.details?.[0]?.message || 'Validation error');
         }
         const { email, password } = value;
-        // Find user by email
+        // Cari user berdasarkan email
         const user = await prisma.user.findUnique({
             where: { email },
             select: {
@@ -116,18 +116,18 @@ export const supplierLogin = async (req, res, next) => {
         if (!user) {
             throw new Error('Email not registered');
         }
-        // Check if user is a supplier
+        // Cek apakah user supplier
         if (user.role !== 'supplier') {
             throw new Error('Access denied: Only suppliers can login here');
         }
-        // Compare password
+        // Bandingin password
         const isPasswordValid = await bcrypt.compare(password, user.password);
         if (!isPasswordValid) {
             throw new Error('Invalid password');
         }
         // Generate JWT token
         const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
-        // Remove password from response
+        // Hapus password dari response
         const { password: _, ...userWithoutPassword } = user;
         res.status(200).json({
             message: 'Supplier login successful',

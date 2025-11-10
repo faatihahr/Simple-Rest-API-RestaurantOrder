@@ -31,6 +31,7 @@ model products {
   updatedAt   DateTime @updatedAt
   isAvailable Boolean  @default(true)
   isArchived  Boolean  @default(false)
+  image       String?
 
 
   @@index([categoryId], name: "idx_category_id")
@@ -92,18 +93,19 @@ enum Role {
 }
 
 model user {
-  id         Int      @id @default(autoincrement())
-  name       String
-  email      String   @unique
-  password   String
-  role       Role     @default(user)
-  point      Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  orders     orders[]
-  favorites  user_favorites[]
-  reviews    user_reviews[]
-  supplier   Supplier?
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  password     String
+  role         Role     @default(user)
+  point        Int      @default(0)
+  profileImage String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  orders       orders[]
+  favorites    user_favorites[]
+  reviews      user_reviews[]
+  supplier     Supplier?
 }
 
 model user_favorites {
@@ -157,6 +159,7 @@ model Stock {
   products   ProductStock[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  image      String?
 
   @@index([supplierId], name: "idx_supplier_id")
 }

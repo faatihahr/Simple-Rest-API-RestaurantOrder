@@ -15,7 +15,7 @@ const router = Router();
 router.get('/', getOrders);
 router.get('/summary', getOrderSummary);
 router.get('/:id(\\d+)', getOrderById);
-router.post('/createorders', authenticate, createOrder); 
+router.post('/createorders', authenticate, createOrder);
 router.put('/update/:id(\\d+)', updateOrder);
 
 // Rute cuma bisa diakses admin

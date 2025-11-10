@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import prisma from '../lib/prisma.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'; // Use environment variable in production
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'; // Pakai environment variable di production
 
 // Extend Request interface buat include user
 declare global {
@@ -17,14 +17,31 @@ declare global {
   }
 }
 
+// Extend session interface
+declare module 'express-session' {
+  interface SessionData {
+    token?: string;
+  }
+}
+
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // ambil token dari session
+    let token: string | undefined = req.session?.token;
+    if (!token) {
+      token = req.cookies?.token;
+    }
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7); // Hapus prefix 'Bearer '
+      }
+    }
+
+    if (!token) {
       return next();
     }
 
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
     const decoded = jwt.verify(token, JWT_SECRET) as { id: number; email: string; role: 'admin' | 'user' | 'supplier' };
 
     const user = await prisma.user.findUnique({

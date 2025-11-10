@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma.js';
+import { saveUploadedFile, validateImageFile, getUploadedFiles } from '../lib/upload.js';
 export const getProducts = async (req, res) => {
     try {
         const { category, sort, limit, offset } = req.query;
@@ -56,12 +57,42 @@ export const createProduct = async (req, res) => {
         return res.status(400).json({ message: 'Name, price, description, and categoryId are required' });
     }
     try {
+        const files = getUploadedFiles(req);
+        const imageUrls = [];
+        if (files && files.images) {
+            const imageFiles = Array.isArray(files.images) ? files.images : [files.images];
+            // Limit to maximum 10 images per product
+            if (imageFiles.length > 10) {
+                return res.status(400).json({ message: 'Maximum 10 images allowed per product' });
+            }
+            for (const file of imageFiles) {
+                // Additional validation: Check for empty files
+                if (file.size === 0) {
+                    return res.status(400).json({ message: 'One or more image files are empty.' });
+                }
+                // Check filename for path traversal attempts
+                if (file.name.includes('..') || file.name.includes('/') || file.name.includes('\\')) {
+                    return res.status(400).json({ message: 'Invalid filename detected.' });
+                }
+                if (!validateImageFile(file)) {
+                    return res.status(400).json({ message: 'Invalid image file. Only JPEG, PNG, GIF, and WebP files up to 10MB are allowed.' });
+                }
+                const imageUrl = await saveUploadedFile(file, 'products');
+                imageUrls.push(imageUrl);
+            }
+        }
         const newProduct = await prisma.products.create({
             data: {
                 name,
                 price,
                 description,
-                categoryId
+                categoryId,
+                images: {
+                    create: imageUrls.map(url => ({ url }))
+                }
+            },
+            include: {
+                images: true
             }
         });
         res.status(201).json({ message: 'Product created successfully', data: newProduct });
@@ -74,13 +105,53 @@ export const updateProduct = async (req, res) => {
     const id = parseInt(req.params.id);
     const { name, price, description, categoryId } = req.body;
     try {
+        const files = getUploadedFiles(req);
+        const imageUrls = [];
+        if (files && files.images) {
+            const imageFiles = Array.isArray(files.images) ? files.images : [files.images];
+            // Check current image count to prevent exceeding limit
+            const currentProduct = await prisma.products.findUnique({
+                where: { id },
+                include: { images: true }
+            });
+            if (!currentProduct) {
+                return res.status(404).json({ message: 'Product not found' });
+            }
+            if (currentProduct.images.length + imageFiles.length > 10) {
+                return res.status(400).json({ message: 'Maximum 10 images allowed per product' });
+            }
+            for (const file of imageFiles) {
+                // Additional validation: Check for empty files
+                if (file.size === 0) {
+                    return res.status(400).json({ message: 'One or more image files are empty.' });
+                }
+                // Check filename for path traversal attempts
+                if (file.name.includes('..') || file.name.includes('/') || file.name.includes('\\')) {
+                    return res.status(400).json({ message: 'Invalid filename detected.' });
+                }
+                if (!validateImageFile(file)) {
+                    return res.status(400).json({ message: 'Invalid image file. Only JPEG, PNG, GIF, and WebP files up to 10MB are allowed.' });
+                }
+                const imageUrl = await saveUploadedFile(file, 'products');
+                imageUrls.push(imageUrl);
+            }
+        }
+        const updateData = {
+            ...(name !== undefined && { name }),
+            ...(price !== undefined && { price }),
+            ...(description !== undefined && { description }),
+            ...(categoryId !== undefined && { categoryId })
+        };
+        if (imageUrls.length > 0) {
+            updateData.images = {
+                create: imageUrls.map(url => ({ url }))
+            };
+        }
         const updatedProduct = await prisma.products.update({
             where: { id },
-            data: {
-                ...(name !== undefined && { name }),
-                ...(price !== undefined && { price }),
-                ...(description !== undefined && { description }),
-                ...(categoryId !== undefined && { categoryId })
+            data: updateData,
+            include: {
+                images: true
             }
         });
         res.json({ message: 'Product updated successfully', data: updatedProduct });

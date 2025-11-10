@@ -1,6 +1,6 @@
 import prisma from '../lib/prisma.js';
-import { createStockSchema, registerSupplierSchema } from '../lib/validation.js';
-// Validasi untuk pembaruan stok
+import { registerSupplierSchema, createStockSchema } from '../lib/validation.js';
+// Validasi buat update stok
 const validateStockUpdate = (updates) => {
     for (const update of updates) {
         if (update.quantityChange < 0) {
@@ -8,7 +8,7 @@ const validateStockUpdate = (updates) => {
         }
     }
 };
-// Perbarui ketersediaan produk berdasarkan stok
+// Update ketersediaan produk berdasarkan stok
 const updateProductAvailability = async () => {
     const products = await prisma.products.findMany({
         include: {
@@ -35,12 +35,7 @@ const updateProductAvailability = async () => {
 };
 export const updateStock = async (req, res, next) => {
     const { updates } = req.body;
-    if (!updates || !Array.isArray(updates)) {
-        return res.status(400).json({ message: 'Updates array is required' });
-    }
     try {
-        // Validasi untuk pembaruan stok
-        validateStockUpdate(updates);
         const updatedStocks = [];
         // Transaksi untuk pembaruan stok massal
         await prisma.$transaction(async (tx) => {
@@ -228,9 +223,6 @@ export const getStocks = async (req, res, next) => {
 };
 export const deleteStock = async (req, res, next) => {
     const { stockUpdates } = req.body;
-    if (!stockUpdates || !Array.isArray(stockUpdates)) {
-        return res.status(400).json({ message: 'stockUpdates array is required' });
-    }
     try {
         const updatedStocks = [];
         // Transaksi untuk pengurangan kuantitas massal
@@ -243,7 +235,7 @@ export const deleteStock = async (req, res, next) => {
                 if (!stock) {
                     throw new Error(`Stock with id ${update.stockId} not found`);
                 }
-                // hitung kuantitas baru
+                // Hitung kuantitas baru
                 const beforeQuantity = stock.quantity;
                 const newQuantity = Math.max(0, stock.quantity - update.quantityToDelete); // Prevent negative quantity
                 // Update stock quantity
@@ -261,7 +253,7 @@ export const deleteStock = async (req, res, next) => {
         });
         // Update produk yang tersedia berdasarkan stok yang diperbarui
         await updateProductAvailability();
-        // Mnampilkan produk yang terpengaruh (tidak tersedia atau diarsipkan)
+        // Menampilkan produk yang terpengaruh (tidak tersedia atau diarsipkan)
         const affectedProducts = await prisma.products.findMany({
             where: {
                 OR: [

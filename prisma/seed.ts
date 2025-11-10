@@ -26,6 +26,7 @@ async function main() {
       name: 'Margherita Pizza',
       description: 'Classic pizza with tomato sauce, mozzarella, and basil',
       price: 12.99,
+      image: null,
     },
   });
 
@@ -37,6 +38,7 @@ async function main() {
       name: 'Cheeseburger',
       description: 'Juicy beef patty with cheese, lettuce, and tomato',
       price: 9.99,
+      image: null,
     },
   });
 
@@ -48,6 +50,7 @@ async function main() {
       name: 'Espresso',
       description: 'Strong and rich coffee',
       price: 3.50,
+      image: null,
     },
   });
 
@@ -59,6 +62,7 @@ async function main() {
       name: 'Orange Juice',
       description: 'Freshly squeezed orange juice',
       price: 4.00,
+      image: null,
     },
   });
 
@@ -337,6 +341,7 @@ async function main() {
         quantity: 100,
         unit: 'kg',
         supplierId: supplierA.id,
+        image: null,
       },
     });
   }
@@ -349,6 +354,7 @@ async function main() {
         quantity: 200,
         unit: 'kg',
         supplierId: supplierB.id,
+        image: null,
       },
     });
   }

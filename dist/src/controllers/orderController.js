@@ -144,7 +144,7 @@ export const createOrder = async (req, res) => {
                     data: { quantity: { decrement: update.reduceBy } }
                 });
             }
-            // Award points to regular users
+            // Berikan poin ke pengguna biasa
             let pointsAdded = 0;
             if (userId !== undefined) {
                 const user = await tx.user.findUnique({
@@ -185,7 +185,7 @@ export const updateOrder = async (req, res) => {
             await prisma.orderItems.deleteMany({
                 where: { orderId: id }
             });
-            // menghitung ulang totalPrice dan menambahkan item baru
+            // Hitung ulang totalPrice dan tambahkan item baru
             let totalPrice = 0;
             const orderItems = [];
             for (const item of items) {
@@ -273,7 +273,7 @@ export const getOrderSummary = async (req, res) => {
         const { limit, offset } = req.query;
         const take = limit ? parseInt(limit) : 10;
         const skip = offset ? parseInt(offset) : 0;
-        // menampilkan seluruh item berdasarkan tanggal (createdAt)
+        // Tampilkan seluruh item berdasarkan tanggal (createdAt)
         const orders = await prisma.orders.findMany({
             select: {
                 createdAt: true,
@@ -282,7 +282,7 @@ export const getOrderSummary = async (req, res) => {
             orderBy: {
                 createdAt: 'desc'
             },
-            take: 1000, //limitasi besar untuk mengambil data
+            take: 1000, // Limitasi besar untuk mengambil data
             skip: 0
         });
         // Group orders berdasarkan tanggal

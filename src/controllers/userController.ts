@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import prisma from '../lib/prisma.js';
+import { saveUploadedFile, validateImageFile, getUploadedFiles } from '../lib/upload.js';
 
 export const transferPoints = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -15,7 +16,7 @@ export const transferPoints = async (req: Request, res: Response, next: NextFunc
     });
 
     if (!senderBefore) {
-      throw new Error('Sender not found');
+      throw new Error('Pengirim ga ketemu');
     }
 
     const receiverBefore = await prisma.user.findUnique({
@@ -24,11 +25,11 @@ export const transferPoints = async (req: Request, res: Response, next: NextFunc
     });
 
     if (!receiverBefore) {
-      throw new Error('Receiver not found');
+      throw new Error('Penerima ga ketemu');
     }
 
     if (senderBefore.point < points) {
-      throw new Error('Not enough points!');
+      throw new Error('Poin ga cukup!');
     }
 
     // Proses transaksi
@@ -165,7 +166,7 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
       throw new Error('Invalid user ID');
     }
 
-    // Check if user is authenticated and owns the data
+    // Cek apakah user sudah login dan punya kases ke data
     if (!req.user) {
       throw new Error('Authentication required');
     }
@@ -191,13 +192,46 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
       }
     }
 
+    // Handle upload gambar profil (hanya satu file)
+    let profileImageUrl: string | undefined;
+    const files = getUploadedFiles(req);
+    if (files && files.profileImage) {
+      const profileImages = Array.isArray(files.profileImage) ? files.profileImage : [files.profileImage];
+
+      // Limit to one profile image
+      if (profileImages.length > 1) {
+        throw new Error('Only one profile image is allowed.');
+      }
+
+      const profileImage = profileImages[0];
+      if (profileImage) {
+        // Validasi tambahan: Cek file kosong
+        if (profileImage.size === 0) {
+          throw new Error('Profile image file is empty.');
+        }
+
+        // Validasi file gambar dengan cek keamanan yang lebih ketat
+        if (!validateImageFile(profileImage)) {
+          throw new Error('Invalid profile image file. Only JPEG, PNG, GIF, and WebP files up to 10MB are allowed.');
+        }
+
+        // Cek nama file utuk mencegah path traversal
+        if (profileImage.name.includes('..') || profileImage.name.includes('/') || profileImage.name.includes('\\')) {
+          throw new Error('Invalid filename.');
+        }
+
+        profileImageUrl = await saveUploadedFile(profileImage, 'profiles');
+      }
+    }
+
     const user = await prisma.user.update({
       where: { id: userId },
       data: {
         ...(name && { name }),
         ...(email && { email }),
         ...(password && { password }),
-        ...(point !== undefined && { point })
+        ...(point !== undefined && { point }),
+        ...(profileImageUrl && { profileImage: profileImageUrl })
       },
       select: {
         id: true,
@@ -205,6 +239,7 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
         email: true,
         role: true,
         point: true,
+        profileImage: true,
         createdAt: true,
         updatedAt: true
       }
@@ -229,7 +264,7 @@ export const deleteUser = async (req: Request, res: Response, next: NextFunction
       throw new Error('Invalid user ID');
     }
 
-    // Check if user is authenticated and owns the data
+    // Cek apakah user sdhlogin dan punya akses ke data 
     if (!req.user) {
       throw new Error('Authentication required');
     }

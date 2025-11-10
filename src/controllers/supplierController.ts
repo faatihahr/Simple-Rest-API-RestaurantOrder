@@ -1,7 +1,9 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { Prisma } from '@prisma/client';
+import path from 'path';
 import prisma from '../lib/prisma.js';
 import { registerSupplierSchema, createStockSchema } from '../lib/validation.js';
+import { validateImageFile } from '../lib/upload.js';
 
 // Validasi buat update stok
 const validateStockUpdate = (updates: { stockId: number; quantityChange: number }[]) => {
@@ -65,7 +67,7 @@ export const updateStock = async (req: Request, res: Response, next: NextFunctio
           throw new Error(`Insufficient stock for ${stock.name}: current ${stock.quantity}, change ${update.quantityChange}`);
         }
 
-        // Update stock
+        // Update stok
         await tx.stock.update({
           where: { id: update.stockId },
           data: { quantity: newQuantity }
@@ -118,7 +120,7 @@ export const updateStock = async (req: Request, res: Response, next: NextFunctio
 
 export const registerSupplier = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Validate input using Joi
+    // Validasi input pake Joi
     const { error, value } = registerSupplierSchema.validate(req.body);
     if (error) {
       throw new Error(error.details?.[0]?.message || 'Validation error');
@@ -126,7 +128,7 @@ export const registerSupplier = async (req: Request, res: Response, next: NextFu
 
     const { name, email, password, stocks } = value;
 
-    // Check if user already exists
+    // Cek apakah user udah ada
     const existingUser = await prisma.user.findUnique({
       where: { email }
     });
@@ -135,24 +137,78 @@ export const registerSupplier = async (req: Request, res: Response, next: NextFu
       throw new Error('Email already exists');
     }
 
+    // Handle upload gambar profil
+    let profileImageUrl: string | undefined;
+    const profileImages = req.files ? (req.files as any).profileImage : null;
+    if (profileImages) {
+      // Limit to one profile image
+      if (Array.isArray(profileImages)) {
+        if (profileImages.length > 1) {
+          throw new Error('Only one profile image is allowed.');
+        }
+        const profileImage = profileImages[0];
+        if (profileImage) {
+          // Validasi tambahan: Cek file kosong
+          if (profileImage.size === 0) {
+            throw new Error('Profile image file is empty.');
+          }
+
+          // Validasi file gambar dengan cek keamanan yang lebih ketat
+          if (!validateImageFile(profileImage)) {
+            throw new Error('Invalid profile image file. Only JPEG, PNG, GIF, and WebP files up to 10MB are allowed.');
+          }
+
+          // Cek nama file buat hindari path traversal
+          if (profileImage.originalname.includes('..') || profileImage.originalname.includes('/') || profileImage.originalname.includes('\\')) {
+            throw new Error('Invalid filename.');
+          }
+
+          profileImageUrl = `/uploads/profiles/${profileImage.filename || profileImage.originalname}`;
+        }
+      } else {
+        // Single file
+        const profileImage = profileImages;
+        if (profileImage) {
+          // Validasi tambahan: Cek file kosong
+          if (profileImage.size === 0) {
+            throw new Error('Profile image file is empty.');
+          }
+
+          // Validasi file gambar 
+          if (!validateImageFile(profileImage)) {
+            throw new Error('Invalid profile image file. Only JPEG, PNG, GIF, and WebP files up to 10MB are allowed.');
+          }
+
+          // Cek nama file utk cegah path traversal
+          if (profileImage.originalname.includes('..') || profileImage.originalname.includes('/') || profileImage.originalname.includes('\\')) {
+            throw new Error('Invalid filename.');
+          }
+
+          profileImageUrl = `/uploads/profiles/${profileImage.filename || profileImage.originalname}`;
+        }
+      }
+    }
+
     // Hash password
     const bcrypt = await import('bcrypt');
     const hashedPassword = await bcrypt.default.hash(password, 10);
 
-    // Create user and supplier in transaction
+    // Buat user dan supplier dalam transaksi
     const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const user = await tx.user.create({
         data: {
           name,
           email,
           password: hashedPassword,
-          role: 'supplier'
+          role: 'supplier',
+          profileImage: profileImageUrl || null
         },
         select: {
           id: true,
           name: true,
           email: true,
           role: true,
+          profileImage: true,
           createdAt: true
         }
       });
@@ -206,14 +262,39 @@ export const createStock = async (req: Request, res: Response, next: NextFunctio
   }
 
   try {
-    // Validate input using Joi
+    // Validasi input Joi
     const { error, value } = createStockSchema.validate(req.body);
     if (error) {
       throw new Error(error.details?.[0]?.message || 'Validation error');
     }
 
     const { name, quantity, unit } = value;
-    // Find supplier by userId
+
+    // Handle gambar stok 
+    let imageUrl: string | undefined;
+    if (req.file) {
+      const file = req.file;
+      // Validasi tambahan: Cek file kosong
+      if (file.size === 0) {
+        return res.status(400).json({ message: 'Image file is empty.' });
+      }
+
+      // Cek nama file buat utk cegah path traversal
+      if (file.originalname.includes('..') || file.originalname.includes('/') || file.originalname.includes('\\')) {
+        return res.status(400).json({ message: 'Invalid filename detected.' });
+      }
+
+      // Validasi file gambar
+      if (!validateImageFile(file)) {
+        return res.status(400).json({ message: 'Invalid image file. Only JPEG, PNG, GIF, and WebP files up to 10MB are allowed.' });
+      }
+
+      // File disimpan multer
+      const relativePath = path.relative(path.join(process.cwd(), 'src'), file.path);
+      imageUrl = `/${relativePath.replace(/\\/g, '/')}`;
+    }
+
+    // Cari supplier berdasarkan userId
     const supplier = await prisma.supplier.findUnique({
       where: { userId: req.user.id }
     });
@@ -225,16 +306,18 @@ export const createStock = async (req: Request, res: Response, next: NextFunctio
     const stock = await prisma.stock.create({
       data: {
         name,
-        quantity: quantity || 0,
+        quantity: parseFloat(quantity) || 0,
         unit,
         supplierId: supplier.id,
+        image: imageUrl, 
       },
       include: { supplier: true },
     });
 
     res.status(201).json({ message: 'Stock created successfully', data: stock });
   } catch (error) {
-    next(error);
+    console.error('Error creating stock:', error);
+    res.status(500).json({ message: 'Error creating stock', error: (error as Error).message });
   }
 };
 

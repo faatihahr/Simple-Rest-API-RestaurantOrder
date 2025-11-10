@@ -8,6 +8,8 @@ import {
   getProductsByCategory,
 } from '../controllers/productController.js';
 import { authorize } from '../middleware/auth-middleware.js';
+import { uploadRateLimit, productRateLimit } from '../middleware/rate-limit-middleware.js';
+import { uploadMiddleware } from '../middleware/upload-middleware.js';
 
 const router = Router();
 
@@ -16,9 +18,9 @@ router.get('/', getProducts);
 router.get('/category/:categoryName', getProductsByCategory);
 router.get('/:id', getProductById);
 
-// Rute cuma bisa diakses admin
-router.post('/createprd', authorize(['admin']), createProduct);
-router.put('/update/:id', authorize(['admin']), updateProduct);
-router.delete('/:id', authorize(['admin']), deleteProduct);
+// Rute cuma bisa diakses admin with rate limiting
+router.post('/createprd', uploadRateLimit, authorize(['admin']), uploadMiddleware.single('productImage'), createProduct);
+router.put('/update/:id', productRateLimit, authorize(['admin']), uploadMiddleware.single('productImage'), updateProduct);
+router.delete('/:id', productRateLimit, authorize(['admin']), deleteProduct);
 
 export default router;
